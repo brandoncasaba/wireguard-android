@@ -28,7 +28,6 @@ import java9.util.concurrent.CompletableFuture
 import java9.util.concurrent.CompletionStage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -53,15 +52,7 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
         return tunnel
     }
 
-    fun create(name: String, config: Config?): CompletionStage<ObservableTunnel> {
-        if (Tunnel.isNameInvalid(name))
-            return CompletableFuture.failedFuture(IllegalArgumentException(context.getString(R.string.tunnel_error_invalid_name)))
-        if (tunnelMap.containsKey(name))
-            return CompletableFuture.failedFuture(IllegalArgumentException(context.getString(R.string.tunnel_error_already_exists, name)))
-        return getAsyncWorker().supplyAsync { configStore.create(name, config!!) }.thenApply { addToList(name, it, Tunnel.State.DOWN) }
-    }
-
-    suspend fun createAsync(name: String, config: Config?): ObservableTunnel {
+    suspend fun create(name: String, config: Config?): ObservableTunnel {
         if (Tunnel.isNameInvalid(name))
             throw IllegalArgumentException(context.getString(R.string.tunnel_error_invalid_name))
         if (tunnelMap.containsKey(name))
@@ -84,7 +75,7 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
                 configStore.delete(tunnel.name)
             } catch (e: Exception) {
                 if (originalState == Tunnel.State.UP)
-                    getBackend().setState(tunnel, Tunnel.State.UP, tunnel.config)
+                    getBackend().setState(tunnel, Tunnel.State.UP, tunnel.getConfig())
                 tunnelMap.add(tunnel)
                 if (wasLastUsed)
                     lastUsedTunnel = tunnel
@@ -108,16 +99,8 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
 
     suspend fun getTunnelsAsync() = tunnelsAsync.await()
 
-    fun getTunnelConfig(tunnel: ObservableTunnel): CompletionStage<Config> = getAsyncWorker()
-            .supplyAsync { configStore.load(tunnel.name) }.thenApply(tunnel::onConfigChanged)
-
-    suspend fun getTunnelConfigAsync(tunnel: ObservableTunnel): Deferred<Config> = withContext(Dispatchers.IO) {
-        val deferred = CompletableDeferred<Config>()
-        configStore.load(tunnel.name).also {
-            tunnel.onConfigChanged(it)
-            deferred.complete(it)
-        }
-        deferred
+    suspend fun getTunnelConfig(tunnel: ObservableTunnel): Config {
+        return configStore.load(tunnel.name).also { tunnel.onConfigChanged(it) }
     }
 
     suspend fun onCreate() = withContext(Dispatchers.IO) {
@@ -156,9 +139,9 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
                 .whenComplete(ExceptionLoggers.E)
     }
 
-    fun restoreState(force: Boolean): CompletionStage<Void> {
+    suspend fun restoreState(force: Boolean) {
         if (!force && !getSharedPreferences().getBoolean(KEY_RESTORE_ON_BOOT, false))
-            return CompletableFuture.completedFuture(null)
+            return
         synchronized(delayedLoadRestoreTunnels) {
             if (!haveLoaded) {
                 val f = CompletableFuture<Void>()
@@ -176,16 +159,16 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
         getSharedPreferences().edit().putStringSet(KEY_RUNNING_TUNNELS, tunnelMap.filter { it.state == Tunnel.State.UP }.map { it.name }.toSet()).commit()
     }
 
-    fun setTunnelConfig(tunnel: ObservableTunnel, config: Config): CompletionStage<Config> = getAsyncWorker().supplyAsync {
+    suspend fun setTunnelConfig(tunnel: ObservableTunnel, config: Config): Config {
         getBackend().setState(tunnel, tunnel.state, config)
-        configStore.save(tunnel.name, config)
-    }.thenApply { tunnel.onConfigChanged(it) }
+        return configStore.save(tunnel.name, config).also { tunnel.onConfigChanged(it) }
+    }
 
-    fun setTunnelName(tunnel: ObservableTunnel, name: String): CompletionStage<String> {
+    suspend fun setTunnelName(tunnel: ObservableTunnel, name: String): String {
         if (Tunnel.isNameInvalid(name))
-            return CompletableFuture.failedFuture(IllegalArgumentException(context.getString(R.string.tunnel_error_invalid_name)))
+            throw IllegalArgumentException(context.getString(R.string.tunnel_error_invalid_name))
         if (tunnelMap.containsKey(name)) {
-            return CompletableFuture.failedFuture(IllegalArgumentException(context.getString(R.string.tunnel_error_already_exists, name)))
+            throw IllegalArgumentException(context.getString(R.string.tunnel_error_already_exists, name))
         }
         val originalState = tunnel.state
         val wasLastUsed = tunnel == lastUsedTunnel
@@ -193,34 +176,34 @@ class TunnelManager(private val configStore: ConfigStore) : BaseObservable() {
         if (wasLastUsed)
             lastUsedTunnel = null
         tunnelMap.remove(tunnel)
-        return getAsyncWorker().supplyAsync {
+        try {
             if (originalState == Tunnel.State.UP)
                 getBackend().setState(tunnel, Tunnel.State.DOWN, null)
             configStore.rename(tunnel.name, name)
-            val newName = tunnel.onNameChanged(name)
             if (originalState == Tunnel.State.UP)
-                getBackend().setState(tunnel, Tunnel.State.UP, tunnel.config)
-            newName
-        }.whenComplete { _, e ->
-            // On failure, we don't know what state the tunnel might be in. Fix that.
-            if (e != null)
-                getTunnelState(tunnel)
-            // Add the tunnel back to the manager, under whatever name it thinks it has.
-            tunnelMap.add(tunnel)
-            if (wasLastUsed)
-                lastUsedTunnel = tunnel
+                getBackend().setState(tunnel, Tunnel.State.UP, tunnel.getConfig())
+        } catch (e: Exception) {
+            getTunnelState(tunnel)
         }
+        tunnelMap.add(tunnel)
+        if (wasLastUsed)
+            lastUsedTunnel = tunnel
+        return tunnel.onNameChanged(name)
     }
 
-    fun setTunnelState(tunnel: ObservableTunnel, state: Tunnel.State): CompletionStage<Tunnel.State> = tunnel.configAsync
-            .thenCompose { getAsyncWorker().supplyAsync { getBackend().setState(tunnel, state, it) } }
-            .whenComplete { newState, e ->
-                // Ensure onStateChanged is always called (failure or not), and with the correct state.
-                tunnel.onStateChanged(if (e == null) newState else tunnel.state)
-                if (e == null && newState == Tunnel.State.UP)
-                    lastUsedTunnel = tunnel
-                saveState()
-            }
+    suspend fun setTunnelState(tunnel: ObservableTunnel, state: Tunnel.State): Tunnel.State {
+        val newState = try {
+            val newState = getBackend().setState(tunnel, state, tunnel.getConfig())
+            if (newState == Tunnel.State.UP)
+                lastUsedTunnel = tunnel
+            newState
+        } catch (_: Exception) {
+            tunnel.state
+        }
+        tunnel.onStateChanged(newState)
+        saveState()
+        return newState
+    }
 
     class IntentReceiver : BroadcastReceiver(), CoroutineScope {
         override val coroutineContext

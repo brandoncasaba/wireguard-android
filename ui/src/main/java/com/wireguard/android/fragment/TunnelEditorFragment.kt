@@ -145,7 +145,7 @@ class TunnelEditorFragment : BaseFragment(), AppSelectionListener {
                 }
                 tunnel!!.name != binding!!.name -> {
                     Log.d(TAG, "Attempting to rename tunnel to " + binding!!.name)
-                    tunnel!!.setNameAsync(binding!!.name!!).whenComplete { _, t -> onTunnelRenamed(tunnel!!, newConfig, t) }
+                    tunnel!!.setName(binding!!.name!!).whenComplete { _, t -> onTunnelRenamed(tunnel!!, newConfig, t) }
                 }
                 else -> {
                     Log.d(TAG, "Attempting to save config of " + tunnel!!.name)

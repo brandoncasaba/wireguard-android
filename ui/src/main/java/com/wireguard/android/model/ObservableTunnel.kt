@@ -14,8 +14,6 @@ import com.wireguard.android.util.ExceptionLoggers
 import com.wireguard.config.Config
 import java9.util.concurrent.CompletableFuture
 import java9.util.concurrent.CompletionStage
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Deferred
 
 /**
  * Encapsulates the volatile and nonvolatile state of a WireGuard tunnel.
@@ -23,7 +21,7 @@ import kotlinx.coroutines.Deferred
 class ObservableTunnel internal constructor(
         private val manager: TunnelManager,
         private var name: String,
-        config: Config?,
+        private var config: Config?,
         state: Tunnel.State
 ) : BaseObservable(), Keyed<String>, Tunnel {
     override val key
@@ -32,10 +30,10 @@ class ObservableTunnel internal constructor(
     @Bindable
     override fun getName() = name
 
-    fun setNameAsync(name: String): CompletionStage<String> = if (name != this.name)
+    suspend fun setName(name: String): String = if (name != this.name)
         manager.setTunnelName(this, name)
     else
-        CompletableFuture.completedFuture(this.name)
+        this.name
 
     fun onNameChanged(name: String): String {
         this.name = name
@@ -64,33 +62,18 @@ class ObservableTunnel internal constructor(
     else
         CompletableFuture.completedFuture(this.state)
 
-
-    @get:Bindable
-    var config = config
-        get() {
-            if (field == null)
-                manager.getTunnelConfig(this).whenComplete(ExceptionLoggers.E)
-            return field
-        }
-        private set
-
-    val configAsync: CompletionStage<Config>
-        get() = if (config == null)
+    @Bindable
+    suspend fun getConfig(): Config {
+        return if (config == null)
             manager.getTunnelConfig(this)
         else
-            CompletableFuture.completedFuture(config)
-
-    suspend fun getConfigAsync(): Deferred<Config> {
-        return if (config == null)
-            manager.getTunnelConfigAsync(this)
-        else
-            CompletableDeferred<Config>().apply { complete(config!!) }
+            config!!
     }
 
-    fun setConfigAsync(config: Config): CompletionStage<Config> = if (config != this.config)
+    suspend fun setConfigAsync(config: Config): Config = if (config != this.config)
         manager.setTunnelConfig(this, config)
     else
-        CompletableFuture.completedFuture(this.config)
+        this.config!!
 
     fun onConfigChanged(config: Config?): Config? {
         this.config = config

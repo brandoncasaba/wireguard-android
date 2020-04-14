@@ -40,6 +40,13 @@ class InterfaceProxy : BaseObservable, Parcelable {
         }
 
     @get:Bindable
+    var dnsSuffixes: String = ""
+        set(value) {
+            field = value
+            notifyPropertyChanged(BR.dnsSuffixes)
+        }
+
+    @get:Bindable
     var listenPort: String = ""
         set(value) {
             field = value
@@ -72,6 +79,7 @@ class InterfaceProxy : BaseObservable, Parcelable {
     private constructor(parcel: Parcel) {
         addresses = parcel.readString() ?: ""
         dnsServers = parcel.readString() ?: ""
+        dnsSuffixes = parcel.readString() ?: ""
         parcel.readStringList(excludedApplications)
         parcel.readStringList(includedApplications)
         listenPort = parcel.readString() ?: ""
@@ -83,6 +91,7 @@ class InterfaceProxy : BaseObservable, Parcelable {
         addresses = Attribute.join(other.addresses)
         val dnsServerStrings = other.dnsServers.map { it.hostAddress }
         dnsServers = Attribute.join(dnsServerStrings)
+		dnsSuffixes = Attribute.join(other.dnsSuffixes)
         excludedApplications.addAll(other.excludedApplications)
         includedApplications.addAll(other.includedApplications)
         listenPort = other.listenPort.map { it.toString() }.orElse("")
@@ -107,6 +116,7 @@ class InterfaceProxy : BaseObservable, Parcelable {
         val builder = Interface.Builder()
         if (addresses.isNotEmpty()) builder.parseAddresses(addresses)
         if (dnsServers.isNotEmpty()) builder.parseDnsServers(dnsServers)
+        if (dnsSuffixes.isNotEmpty()) builder.parseDnsSuffixes(dnsSuffixes)
         if (excludedApplications.isNotEmpty()) builder.excludeApplications(excludedApplications)
         if (includedApplications.isNotEmpty()) builder.includeApplications(includedApplications)
         if (listenPort.isNotEmpty()) builder.parseListenPort(listenPort)
@@ -118,6 +128,7 @@ class InterfaceProxy : BaseObservable, Parcelable {
     override fun writeToParcel(dest: Parcel, flags: Int) {
         dest.writeString(addresses)
         dest.writeString(dnsServers)
+        dest.writeString(dnsSuffixes)
         dest.writeStringList(excludedApplications)
         dest.writeStringList(includedApplications)
         dest.writeString(listenPort)

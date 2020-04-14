@@ -102,6 +102,7 @@
     <string name="dark_theme_title">Use dark theme</string>
     <string name="delete">Delete</string>
     <string name="dns_servers">DNS servers</string>
+    <string name="dns_suffixes">DNS suffixes</string>
     <string name="edit">Edit</string>
     <string name="endpoint">Endpoint</string>
     <string name="error_down">Error bringing down tunnel: %s</string>

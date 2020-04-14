@@ -42,6 +42,7 @@ public final class Interface {
 
     private final Set<InetNetwork> addresses;
     private final Set<InetAddress> dnsServers;
+    private final Set<String> dnsSuffixes;
     private final Set<String> excludedApplications;
     private final Set<String> includedApplications;
     private final KeyPair keyPair;
@@ -52,6 +53,7 @@ public final class Interface {
         // Defensively copy to ensure immutability even if the Builder is reused.
         addresses = Collections.unmodifiableSet(new LinkedHashSet<>(builder.addresses));
         dnsServers = Collections.unmodifiableSet(new LinkedHashSet<>(builder.dnsServers));
+        dnsSuffixes = Collections.unmodifiableSet(new LinkedHashSet<>(builder.dnsSuffixes));
         excludedApplications = Collections.unmodifiableSet(new LinkedHashSet<>(builder.excludedApplications));
         includedApplications = Collections.unmodifiableSet(new LinkedHashSet<>(builder.includedApplications));
         keyPair = Objects.requireNonNull(builder.keyPair, "Interfaces must have a private key");
@@ -79,6 +81,9 @@ public final class Interface {
                     break;
                 case "dns":
                     builder.parseDnsServers(attribute.getValue());
+                    break;
+                case "dnssuffixes":
+                    builder.parseDnsSuffixes(attribute.getValue());
                     break;
                 case "excludedapplications":
                     builder.parseExcludedApplications(attribute.getValue());
@@ -138,6 +143,16 @@ public final class Interface {
     }
 
     /**
+     * Returns the set of DNS suffixes associated with the interface.
+     *
+     * @return a set of suffixes
+     */
+    public Set<String> getDnsSuffixes() {
+        // The collection is already immutable.
+        return dnsSuffixes;
+    }
+
+    /**
      * Returns the set of applications excluded from using the interface.
      *
      * @return a set of package names
@@ -189,6 +204,7 @@ public final class Interface {
         int hash = 1;
         hash = 31 * hash + addresses.hashCode();
         hash = 31 * hash + dnsServers.hashCode();
+        hash = 31 * hash + dnsSuffixes.hashCode();
         hash = 31 * hash + excludedApplications.hashCode();
         hash = 31 * hash + includedApplications.hashCode();
         hash = 31 * hash + keyPair.hashCode();
@@ -228,6 +244,9 @@ public final class Interface {
                     .collect(Collectors.toUnmodifiableList());
             sb.append("DNS = ").append(Attribute.join(dnsServerStrings)).append('\n');
         }
+        if (!dnsSuffixes.isEmpty()) {
+            sb.append("DNSSuffixes = ").append(Attribute.join(dnsSuffixes)).append('\n');
+        }
         if (!excludedApplications.isEmpty())
             sb.append("ExcludedApplications = ").append(Attribute.join(excludedApplications)).append('\n');
         if (!includedApplications.isEmpty())
@@ -258,6 +277,8 @@ public final class Interface {
         // Defaults to an empty set.
         private final Set<InetAddress> dnsServers = new LinkedHashSet<>();
         // Defaults to an empty set.
+        private final Set<String> dnsSuffixes = new LinkedHashSet<>();
+        // Defaults to an empty set.
         private final Set<String> excludedApplications = new LinkedHashSet<>();
         // Defaults to an empty set.
         private final Set<String> includedApplications = new LinkedHashSet<>();
@@ -285,6 +306,11 @@ public final class Interface {
 
         public Builder addDnsServers(final Collection<? extends InetAddress> dnsServers) {
             this.dnsServers.addAll(dnsServers);
+            return this;
+        }
+
+        public Builder addDnsSuffix(final String suffix) {
+            this.dnsSuffixes.add(suffix);
             return this;
         }
 
@@ -336,6 +362,12 @@ public final class Interface {
             } catch (final ParseException e) {
                 throw new BadConfigException(Section.INTERFACE, Location.DNS, e);
             }
+        }
+
+        public Builder parseDnsSuffixes(final CharSequence suffixes) {
+            for (final String dnsSuffix : Attribute.split(suffixes))
+                addDnsSuffix(dnsSuffix);
+            return this;
         }
 
         public Builder parseExcludedApplications(final CharSequence apps) {

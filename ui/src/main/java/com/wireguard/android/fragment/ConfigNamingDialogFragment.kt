@@ -11,11 +11,13 @@ import android.os.Bundle
 import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import com.wireguard.android.Application
 import com.wireguard.android.R
 import com.wireguard.android.databinding.ConfigNamingDialogFragmentBinding
 import com.wireguard.config.BadConfigException
 import com.wireguard.config.Config
+import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -28,11 +30,12 @@ class ConfigNamingDialogFragment : DialogFragment() {
     private fun createTunnelAndDismiss() {
         binding?.let {
             val name = it.tunnelNameText.text.toString()
-            Application.getTunnelManager().create(name, config).whenComplete { tunnel, throwable ->
-                if (tunnel != null) {
+            lifecycleScope.launch {
+                try {
+                    Application.getTunnelManager().create(name, config)
                     dismiss()
-                } else {
-                    it.tunnelNameTextLayout.error = throwable.message
+                } catch (e: Throwable) {
+                    it.tunnelNameTextLayout.error = e.message
                 }
             }
         }
@@ -49,7 +52,7 @@ class ConfigNamingDialogFragment : DialogFragment() {
         val configBytes = configText!!.toByteArray(StandardCharsets.UTF_8)
         config = try {
             Config.parse(ByteArrayInputStream(configBytes))
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             when (e) {
                 is BadConfigException, is IOException -> throw IllegalArgumentException("Invalid config passed to ${javaClass.simpleName}", e)
                 else -> throw e

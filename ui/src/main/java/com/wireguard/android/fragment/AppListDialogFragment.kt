@@ -13,8 +13,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.databinding.Observable
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.tabs.TabLayout
-import com.wireguard.android.Application
 import com.wireguard.android.BR
 import com.wireguard.android.R
 import com.wireguard.android.databinding.AppListDialogFragmentBinding
@@ -22,6 +22,9 @@ import com.wireguard.android.databinding.ObservableKeyedArrayList
 import com.wireguard.android.model.ApplicationData
 import com.wireguard.android.util.ErrorMessages
 import com.wireguard.android.util.requireTargetFragment
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AppListDialogFragment : DialogFragment() {
     private val appData = ObservableKeyedArrayList<String, ApplicationData>()
@@ -33,33 +36,37 @@ class AppListDialogFragment : DialogFragment() {
     private fun loadData() {
         val activity = activity ?: return
         val pm = activity.packageManager
-        Application.getAsyncWorker().supplyAsync<List<ApplicationData>> {
-            val launcherIntent = Intent(Intent.ACTION_MAIN, null)
-            launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER)
-            val resolveInfos = pm.queryIntentActivities(launcherIntent, 0)
-            val applicationData: MutableList<ApplicationData> = ArrayList()
-            resolveInfos.forEach {
-                val packageName = it.activityInfo.packageName
-                val appData = ApplicationData(it.loadIcon(pm), it.loadLabel(pm).toString(), packageName, currentlySelectedApps.contains(packageName))
-                applicationData.add(appData)
-                appData.addOnPropertyChangedCallback(object : Observable.OnPropertyChangedCallback() {
-                    override fun onPropertyChanged(sender: Observable?, propertyId: Int) {
-                        if (propertyId == BR.selected)
-                            setButtonText()
+        lifecycleScope.launch(Dispatchers.Default) {
+            try {
+                val applicationData: MutableList<ApplicationData> = ArrayList()
+                withContext(Dispatchers.IO) {
+                    val launcherIntent = Intent(Intent.ACTION_MAIN, null)
+                    launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER)
+                    val resolveInfos = pm.queryIntentActivities(launcherIntent, 0)
+                    resolveInfos.forEach {
+                        val packageName = it.activityInfo.packageName
+                        val appData = ApplicationData(it.loadIcon(pm), it.loadLabel(pm).toString(), packageName, currentlySelectedApps.contains(packageName))
+                        applicationData.add(appData)
+                        appData.addOnPropertyChangedCallback(object : Observable.OnPropertyChangedCallback() {
+                            override fun onPropertyChanged(sender: Observable?, propertyId: Int) {
+                                if (propertyId == BR.selected)
+                                    setButtonText()
+                            }
+                        })
                     }
-                })
-            }
-            applicationData.sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-            applicationData
-        }.whenComplete { data, throwable ->
-            if (data != null) {
-                appData.clear()
-                appData.addAll(data)
-            } else {
-                val error = ErrorMessages[throwable]
-                val message = activity.getString(R.string.error_fetching_apps, error)
-                Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
-                dismissAllowingStateLoss()
+                }
+                applicationData.sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+                withContext(Dispatchers.Main.immediate) {
+                    appData.clear()
+                    appData.addAll(applicationData)
+                }
+            } catch (e: Throwable) {
+                withContext(Dispatchers.Main.immediate) {
+                    val error = ErrorMessages[e]
+                    val message = activity.getString(R.string.error_fetching_apps, error)
+                    Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
+                    dismissAllowingStateLoss()
+                }
             }
         }
     }

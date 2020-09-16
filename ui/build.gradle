@@ -10,33 +10,24 @@ group groupName
 final def keystorePropertiesFile = rootProject.file("keystore.properties")
 
 android {
-    buildToolsVersion '29.0.3'
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
-        kotlinOptions {
-            jvmTarget = '1.8'
-        }
-    }
-    compileSdkVersion 29
-    dataBinding.enabled true
-    viewBinding.enabled true
+    compileSdkVersion 30
+    buildFeatures.dataBinding = true
+    buildFeatures.viewBinding = true
     defaultConfig {
         applicationId 'com.wireguard.android'
         minSdkVersion 21
-        targetSdkVersion 29
+        targetSdkVersion 30
         versionCode wireguardVersionCode
         versionName wireguardVersionName
         buildConfigField 'int', 'MIN_SDK_VERSION', "$minSdkVersion.apiLevel"
     }
-    // If the keystore file exists
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled = true
+    }
     if (keystorePropertiesFile.exists()) {
-        // Initialize a new Properties() object called keystoreProperties.
         final def keystoreProperties = new Properties()
-
-        // Load your keystore.properties file into the keystoreProperties object.
         keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 
         signingConfigs {
@@ -68,23 +59,28 @@ dependencies {
     implementation project(":tunnel")
     implementation "androidx.annotation:annotation:$annotationsVersion"
     implementation "androidx.appcompat:appcompat:$appcompatVersion"
-    implementation "androidx.cardview:cardview:$cardviewVersion"
     implementation "androidx.constraintlayout:constraintlayout:$constraintLayoutVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$coordinatorLayoutVersion"
     implementation "androidx.biometric:biometric:$biometricVersion"
     implementation "androidx.core:core-ktx:$coreKtxVersion"
     implementation "androidx.databinding:databinding-runtime:$agpVersion"
-    implementation "androidx.fragment:fragment:$fragmentVersion"
-    implementation "androidx.preference:preference:$preferenceVersion"
-    implementation "com.google.android.material:material:$materialComponentsVersion"
+    implementation "androidx.fragment:fragment-ktx:$fragmentVersion"
+    implementation "androidx.preference:preference-ktx:$preferenceVersion"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleRuntimeKtxVersion"
+    implementation "com.github.material-components:material-components-android:$materialComponentsVersion"
     implementation "com.journeyapps:zxing-android-embedded:$zxingEmbeddedVersion"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion"
-    implementation "net.sourceforge.streamsupport:android-retrofuture:$streamsupportVersion"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:$desugarVersion"
 }
 
 tasks.withType(JavaCompile) {
     options.compilerArgs << '-Xlint:unchecked'
     options.deprecation = true
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8
+    }
 }

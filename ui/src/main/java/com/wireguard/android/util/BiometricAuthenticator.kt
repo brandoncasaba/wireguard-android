@@ -5,44 +5,29 @@
 
 package com.wireguard.android.util
 
-import android.annotation.SuppressLint
-import android.app.KeyguardManager
-import android.content.Context
-import android.os.Build
 import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.StringRes
 import androidx.biometric.BiometricConstants
 import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators
 import androidx.biometric.BiometricPrompt
-import androidx.core.content.getSystemService
 import androidx.fragment.app.Fragment
 import com.wireguard.android.R
 
 
 object BiometricAuthenticator {
     private const val TAG = "WireGuard/BiometricAuthenticator"
-    private val handler = Handler()
+    // Not all devices support strong biometric auth so we're allowing both device credentials as
+    // well as weak biometrics.
+    private const val allowedAuthenticators = Authenticators.DEVICE_CREDENTIAL or Authenticators.BIOMETRIC_WEAK
 
     sealed class Result {
         data class Success(val cryptoObject: BiometricPrompt.CryptoObject?) : Result()
         data class Failure(val code: Int?, val message: CharSequence) : Result()
         object HardwareUnavailableOrDisabled : Result()
         object Cancelled : Result()
-    }
-
-    @SuppressLint("PrivateApi")
-    private fun isPinEnabled(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-            return context.getSystemService<KeyguardManager>()!!.isDeviceSecure
-        return try {
-            val lockUtilsClass = Class.forName("com.android.internal.widget.LockPatternUtils")
-            val lockUtils = lockUtilsClass.getConstructor(Context::class.java).newInstance(context)
-            val method = lockUtilsClass.getMethod("isLockScreenDisabled")
-            !(method.invoke(lockUtils) as Boolean)
-        } catch (e: Exception) {
-            false
-        }
     }
 
     fun authenticate(
@@ -77,12 +62,12 @@ object BiometricAuthenticator {
                 callback(Result.Success(result.cryptoObject))
             }
         }
-        val biometricPrompt = BiometricPrompt(fragment, { handler.post(it) }, authCallback)
+        val biometricPrompt = BiometricPrompt(fragment, { Handler(Looper.getMainLooper()).post(it) }, authCallback)
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
                 .setTitle(fragment.getString(dialogTitleRes))
-                .setDeviceCredentialAllowed(true)
+                .setAllowedAuthenticators(allowedAuthenticators)
                 .build()
-        if (BiometricManager.from(fragment.requireContext()).canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS || isPinEnabled(fragment.requireContext())) {
+        if (BiometricManager.from(fragment.requireContext()).canAuthenticate(allowedAuthenticators) == BiometricManager.BIOMETRIC_SUCCESS) {
             biometricPrompt.authenticate(promptInfo)
         } else {
             callback(Result.HardwareUnavailableOrDisabled)

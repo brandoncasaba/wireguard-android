@@ -7,8 +7,10 @@ package com.wireguard.android.activity
 import android.os.Bundle
 import androidx.databinding.CallbackRegistry
 import androidx.databinding.CallbackRegistry.NotifierCallback
+import androidx.lifecycle.lifecycleScope
 import com.wireguard.android.Application
 import com.wireguard.android.model.ObservableTunnel
+import kotlinx.coroutines.launch
 
 /**
  * Base class for activities that need to remember the currently-selected tunnel.
@@ -35,11 +37,8 @@ abstract class BaseActivity : ThemeChangeAwareActivity() {
             intent != null -> intent.getStringExtra(KEY_SELECTED_TUNNEL)
             else -> null
         }
-        if (savedTunnelName != null) {
-            Application.getTunnelManager()
-                    .tunnels
-                    .thenAccept { selectedTunnel = it[savedTunnelName] }
-        }
+        if (savedTunnelName != null)
+            lifecycleScope.launch { selectedTunnel = Application.getTunnelManager().getTunnels()[savedTunnelName] }
 
         // The selected tunnel must be set before the superclass method recreates fragments.
         super.onCreate(savedInstanceState)
@@ -51,6 +50,7 @@ abstract class BaseActivity : ThemeChangeAwareActivity() {
     }
 
     protected abstract fun onSelectedTunnelChanged(oldTunnel: ObservableTunnel?, newTunnel: ObservableTunnel?)
+
     fun removeOnSelectedTunnelChangedListener(
             listener: OnSelectedTunnelChangedListener) {
         selectionChangeRegistry.remove(listener)

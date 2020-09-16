@@ -13,12 +13,18 @@ import androidx.preference.Preference
 import com.google.android.material.snackbar.Snackbar
 import com.wireguard.android.Application
 import com.wireguard.android.R
-import com.wireguard.android.model.ObservableTunnel
+import com.wireguard.android.util.AdminKnobs
 import com.wireguard.android.util.BiometricAuthenticator
 import com.wireguard.android.util.DownloadsFileSaver
 import com.wireguard.android.util.ErrorMessages
-import com.wireguard.android.util.FragmentUtils
-import java9.util.concurrent.CompletableFuture
+import com.wireguard.android.util.activity
+import com.wireguard.android.util.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -28,52 +34,40 @@ import java.util.zip.ZipOutputStream
  */
 class ZipExporterPreference(context: Context, attrs: AttributeSet?) : Preference(context, attrs) {
     private var exportedFilePath: String? = null
-
     private fun exportZip() {
-        Application.getTunnelManager().tunnels.thenAccept(this::exportZip)
-    }
-
-    private fun exportZip(tunnels: List<ObservableTunnel>) {
-        val futureConfigs = tunnels.map { it.configAsync.toCompletableFuture() }.toTypedArray()
-        if (futureConfigs.isEmpty()) {
-            exportZipComplete(null, IllegalArgumentException(
-                    context.getString(R.string.no_tunnels_error)))
-            return
-        }
-        CompletableFuture.allOf(*futureConfigs)
-                .whenComplete { _, exception ->
-                    Application.getAsyncWorker().supplyAsync {
-                        if (exception != null) throw exception
-                        val outputFile = DownloadsFileSaver.save(context, "wireguard-export.zip", "application/zip", true)
-                        try {
-                            ZipOutputStream(outputFile.outputStream).use { zip ->
-                                for (i in futureConfigs.indices) {
-                                    zip.putNextEntry(ZipEntry(tunnels[i].name + ".conf"))
-                                    zip.write(futureConfigs[i].getNow(null)!!.toWgQuickString().toByteArray(StandardCharsets.UTF_8))
-                                }
-                                zip.closeEntry()
+        lifecycleScope.launch {
+            val tunnels = Application.getTunnelManager().getTunnels()
+            try {
+                exportedFilePath = withContext(Dispatchers.IO) {
+                    val configs = tunnels.map { async(SupervisorJob()) { it.getConfigAsync() } }.awaitAll()
+                    if (configs.isEmpty()) {
+                        throw IllegalArgumentException(context.getString(R.string.no_tunnels_error))
+                    }
+                    val outputFile = DownloadsFileSaver.save(context, "wireguard-export.zip", "application/zip", true)
+                    try {
+                        ZipOutputStream(outputFile.outputStream).use { zip ->
+                            for (i in configs.indices) {
+                                zip.putNextEntry(ZipEntry(tunnels[i].name + ".conf"))
+                                zip.write(configs[i].toWgQuickString().toByteArray(StandardCharsets.UTF_8))
                             }
-                        } catch (e: Exception) {
-                            outputFile.delete()
-                            throw e
+                            zip.closeEntry()
                         }
-                        outputFile.fileName
-                    }.whenComplete(this::exportZipComplete)
+                    } catch (e: Throwable) {
+                        outputFile.delete()
+                        throw e
+                    }
+                    outputFile.fileName
                 }
-    }
-
-    private fun exportZipComplete(filePath: String?, throwable: Throwable?) {
-        if (throwable != null) {
-            val error = ErrorMessages[throwable]
-            val message = context.getString(R.string.zip_export_error, error)
-            Log.e(TAG, message, throwable)
-            Snackbar.make(
-                    FragmentUtils.getPrefActivity(this).findViewById(android.R.id.content),
-                    message, Snackbar.LENGTH_LONG).show()
-            isEnabled = true
-        } else {
-            exportedFilePath = filePath
-            notifyChanged()
+                notifyChanged()
+            } catch (e: Throwable) {
+                val error = ErrorMessages[e]
+                val message = context.getString(R.string.zip_export_error, error)
+                Log.e(TAG, message, e)
+                Snackbar.make(
+                        activity.findViewById(android.R.id.content),
+                        message, Snackbar.LENGTH_LONG).show()
+                isEnabled = true
+            }
         }
     }
 
@@ -82,13 +76,13 @@ class ZipExporterPreference(context: Context, attrs: AttributeSet?) : Preference
     override fun getTitle() = context.getString(R.string.zip_export_title)
 
     override fun onClick() {
-        val prefActivity = FragmentUtils.getPrefActivity(this)
-        val fragment = prefActivity.supportFragmentManager.fragments.first()
+        if (AdminKnobs.disableConfigExport) return
+        val fragment = activity.supportFragmentManager.fragments.first()
         BiometricAuthenticator.authenticate(R.string.biometric_prompt_zip_exporter_title, fragment) {
             when (it) {
                 // When we have successful authentication, or when there is no biometric hardware available.
                 is BiometricAuthenticator.Result.Success, is BiometricAuthenticator.Result.HardwareUnavailableOrDisabled -> {
-                    prefActivity.ensurePermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)) { _, grantResults ->
+                    activity.ensurePermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)) { _, grantResults ->
                         if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                             isEnabled = false
                             exportZip()
@@ -97,7 +91,7 @@ class ZipExporterPreference(context: Context, attrs: AttributeSet?) : Preference
                 }
                 is BiometricAuthenticator.Result.Failure -> {
                     Snackbar.make(
-                            prefActivity.findViewById(android.R.id.content),
+                            activity.findViewById(android.R.id.content),
                             it.message,
                             Snackbar.LENGTH_SHORT
                     ).show()

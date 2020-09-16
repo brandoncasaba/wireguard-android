@@ -12,12 +12,17 @@ import android.util.SparseArray
 import android.view.MenuItem
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import com.wireguard.android.Application
 import com.wireguard.android.R
 import com.wireguard.android.backend.WgQuickBackend
+import com.wireguard.android.util.AdminKnobs
 import com.wireguard.android.util.ModuleLoader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.ArrayList
 import java.util.Arrays
 
@@ -87,14 +92,18 @@ class SettingsActivity : ThemeChangeAwareActivity() {
                 val remoteApps = preferenceManager.findPreference<Preference>("allow_remote_control_intents")
                 remoteApps?.parent?.removePreference(remoteApps)
             }
+            if (AdminKnobs.disableConfigExport) {
+                val zipExporter = preferenceManager.findPreference<Preference>("zip_exporter")
+                zipExporter?.parent?.removePreference(zipExporter)
+            }
             val wgQuickOnlyPrefs = arrayOf(
                     preferenceManager.findPreference("tools_installer"),
                     preferenceManager.findPreference("restore_on_boot"),
                     preferenceManager.findPreference<Preference>("multiple_tunnels")
             ).filterNotNull()
             wgQuickOnlyPrefs.forEach { it.isVisible = false }
-            Application.getBackendAsync().thenAccept { backend ->
-                if (backend is WgQuickBackend) {
+            lifecycleScope.launch {
+                if (Application.getBackend() is WgQuickBackend) {
                     ++preferenceScreen.initialExpandedChildrenCount
                     wgQuickOnlyPrefs.forEach { it.isVisible = true }
                 } else {
@@ -112,11 +121,13 @@ class SettingsActivity : ThemeChangeAwareActivity() {
                 moduleInstaller?.parent?.removePreference(moduleInstaller)
             } else {
                 kernelModuleDisabler?.parent?.removePreference(kernelModuleDisabler)
-                Application.getAsyncWorker().runAsync(Application.getRootShell()::start).whenComplete { _, e ->
-                    if (e == null)
+                lifecycleScope.launch {
+                    try {
+                        withContext(Dispatchers.IO) { Application.getRootShell().start() }
                         moduleInstaller?.isVisible = true
-                    else
+                    } catch (_: Throwable) {
                         moduleInstaller?.parent?.removePreference(moduleInstaller)
+                    }
                 }
             }
         }

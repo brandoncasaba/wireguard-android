@@ -18,6 +18,7 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.snackbar.Snackbar
 import com.wireguard.android.Application
 import com.wireguard.android.R
@@ -25,12 +26,14 @@ import com.wireguard.android.backend.Tunnel
 import com.wireguard.android.databinding.TunnelEditorFragmentBinding
 import com.wireguard.android.fragment.AppListDialogFragment.AppSelectionListener
 import com.wireguard.android.model.ObservableTunnel
+import com.wireguard.android.util.AdminKnobs
 import com.wireguard.android.util.BiometricAuthenticator
 import com.wireguard.android.util.ErrorMessages
 import com.wireguard.android.viewmodel.ConfigProxy
 import com.wireguard.android.widget.EdgeToEdge.setUpRoot
 import com.wireguard.android.widget.EdgeToEdge.setUpScrollingContent
 import com.wireguard.config.Config
+import kotlinx.coroutines.launch
 
 /**
  * Fragment for editing a WireGuard configuration.
@@ -129,7 +132,7 @@ class TunnelEditorFragment : BaseFragment(), AppSelectionListener {
             binding ?: return false
             val newConfig = try {
                 binding!!.config!!.resolve()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val error = ErrorMessages[e]
                 val tunnelName = if (tunnel == null) binding!!.name else tunnel!!.name
                 val message = getString(R.string.config_save_error, tunnelName, error)
@@ -137,20 +140,35 @@ class TunnelEditorFragment : BaseFragment(), AppSelectionListener {
                 Snackbar.make(binding!!.mainContainer, error, Snackbar.LENGTH_LONG).show()
                 return false
             }
-            when {
-                tunnel == null -> {
-                    Log.d(TAG, "Attempting to create new tunnel " + binding!!.name)
-                    val manager = Application.getTunnelManager()
-                    manager.create(binding!!.name!!, newConfig).whenComplete(this::onTunnelCreated)
-                }
-                tunnel!!.name != binding!!.name -> {
-                    Log.d(TAG, "Attempting to rename tunnel to " + binding!!.name)
-                    tunnel!!.setNameAsync(binding!!.name!!).whenComplete { _, t -> onTunnelRenamed(tunnel!!, newConfig, t) }
-                }
-                else -> {
-                    Log.d(TAG, "Attempting to save config of " + tunnel!!.name)
-                    tunnel!!.setConfigAsync(newConfig)
-                            .whenComplete { _, t -> onConfigSaved(tunnel!!, t) }
+            lifecycleScope.launch {
+                when {
+                    tunnel == null -> {
+                        Log.d(TAG, "Attempting to create new tunnel " + binding!!.name)
+                        val manager = Application.getTunnelManager()
+                        try {
+                            onTunnelCreated(manager.create(binding!!.name!!, newConfig), null)
+                        } catch (e: Throwable) {
+                            onTunnelCreated(null, e)
+                        }
+                    }
+                    tunnel!!.name != binding!!.name -> {
+                        Log.d(TAG, "Attempting to rename tunnel to " + binding!!.name)
+                        try {
+                            tunnel!!.setNameAsync(binding!!.name!!)
+                            onTunnelRenamed(tunnel!!, newConfig, null)
+                        } catch (e: Throwable) {
+                            onTunnelRenamed(tunnel!!, newConfig, e)
+                        }
+                    }
+                    else -> {
+                        Log.d(TAG, "Attempting to save config of " + tunnel!!.name)
+                        try {
+                            tunnel!!.setConfigAsync(newConfig)
+                            onConfigSaved(tunnel!!, null)
+                        } catch (e: Throwable) {
+                            onConfigSaved(tunnel!!, e)
+                        }
+                    }
                 }
             }
             return true
@@ -186,13 +204,18 @@ class TunnelEditorFragment : BaseFragment(), AppSelectionListener {
         binding!!.config = ConfigProxy()
         if (tunnel != null) {
             binding!!.name = tunnel!!.name
-            tunnel!!.configAsync.thenAccept(this::onConfigLoaded)
+            lifecycleScope.launch {
+                try {
+                    onConfigLoaded(tunnel!!.getConfigAsync())
+                } catch (_: Throwable) {
+                }
+            }
         } else {
             binding!!.name = ""
         }
     }
 
-    private fun onTunnelCreated(newTunnel: ObservableTunnel, throwable: Throwable?) {
+    private fun onTunnelCreated(newTunnel: ObservableTunnel?, throwable: Throwable?) {
         val message: String
         if (throwable == null) {
             tunnel = newTunnel
@@ -218,7 +241,14 @@ class TunnelEditorFragment : BaseFragment(), AppSelectionListener {
             Log.d(TAG, message)
             // Now save the rest of configuration changes.
             Log.d(TAG, "Attempting to save config of renamed tunnel " + tunnel!!.name)
-            renamedTunnel.setConfigAsync(newConfig).whenComplete { _, t -> onConfigSaved(renamedTunnel, t) }
+            lifecycleScope.launch {
+                try {
+                    renamedTunnel.setConfigAsync(newConfig)
+                    onConfigSaved(renamedTunnel, null)
+                } catch (e: Throwable) {
+                    onConfigSaved(renamedTunnel, e)
+                }
+            }
         } else {
             val error = ErrorMessages[throwable]
             message = getString(R.string.tunnel_rename_error, error)
@@ -252,6 +282,7 @@ class TunnelEditorFragment : BaseFragment(), AppSelectionListener {
         val edit = view as? EditText ?: return
         if (edit.inputType == InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD) return
         if (!haveShownKeys && edit.text.isNotEmpty()) {
+            if (AdminKnobs.disableConfigExport) return
             showingAuthenticator = true
             BiometricAuthenticator.authenticate(R.string.biometric_prompt_private_key_title, this) {
                 showingAuthenticator = false

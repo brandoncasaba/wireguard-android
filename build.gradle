@@ -1,34 +1,25 @@
-
-allprojects {
-    repositories {
-        google()
-        jcenter()
-    }
-}
-
 buildscript {
     ext {
-        agpVersion = '3.6.2'
+        agpVersion = '4.0.1'
         annotationsVersion = '1.1.0'
-        appcompatVersion = '1.1.0'
-        bintrayPluginVersion = '1.8.4'
-        biometricVersion = '1.0.1'
-        cardviewVersion = '1.0.0'
+        appcompatVersion = '1.2.0'
+        bintrayPluginVersion = '1.8.5'
+        biometricVersion = '1.1.0-alpha02'
         collectionVersion = '1.1.0'
-        constraintLayoutVersion = '1.1.3'
+        constraintLayoutVersion = '2.0.1'
         coordinatorLayoutVersion = '1.1.0'
-        coreKtxVersion = '1.2.0'
-        coroutinesVersion = '1.3.5'
+        coreKtxVersion = '1.3.1'
+        coroutinesVersion = '1.3.9'
+        desugarVersion = '1.0.10'
         eddsaVersion = '0.3.0'
-        fragmentVersion = '1.2.4'
+        fragmentVersion = '1.2.5'
         jsr305Version = '3.0.2'
         junitVersion = '4.13'
-        kotlinVersion = '1.3.71'
-        materialComponentsVersion = '1.2.0-alpha05'
+        kotlinVersion = '1.4.10'
+        lifecycleRuntimeKtxVersion = '2.3.0-alpha07'
+        materialComponentsVersion = '22973ff10305397bfc72fed41684175fee8aeefb'
         mavenPluginVersion = '2.1'
-        preferenceVersion = '1.1.0'
-        streamsupportVersion = '1.7.2'
-        threetenabpVersion = '1.2.3'
+        preferenceVersion = '1.1.1'
         zxingEmbeddedVersion = '3.6.0'
 
         groupName = 'com.wireguard.android'
@@ -45,14 +36,23 @@ buildscript {
     }
 }
 
+allprojects {
+    repositories {
+        google()
+        jcenter()
+        maven { url 'https://jitpack.io' }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
 
 tasks {
     wrapper {
-        gradleVersion = "6.2.2"
+        gradleVersion = "6.6.1"
         distributionType = Wrapper.DistributionType.ALL
+        distributionSha256Sum = "11657af6356b7587bfb37287b5992e94a9686d5c8a0a1b60b87b9928a2decde5"
     }
 }
 

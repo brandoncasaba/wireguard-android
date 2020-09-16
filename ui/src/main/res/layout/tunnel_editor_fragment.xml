@@ -227,7 +227,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:hint="@string/dns_suffixes"
-                                android:inputType="number"
+                                android:inputType="textNoSuggestions|textVisiblePassword"
                                 android:text="@={config.interface.dnsSuffixes}"
                                 android:textAlignment="center" />
                         </com.google.android.material.textfield.TextInputLayout>

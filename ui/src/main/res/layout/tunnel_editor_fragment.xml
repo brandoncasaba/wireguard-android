@@ -219,10 +219,12 @@
                             android:layout_height="wrap_content"
                             android:layout_margin="4dp"
                             android:hint="@string/dns_suffixes"
+                            app:expandedHintEnabled="false"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintStart_toStartOf="parent"
                             app:layout_constraintTop_toBottomOf="@+id/dns_servers_label_layout">
-                            <com.wireguard.android.widget.MonkeyedTextInputEditText
+
+                            <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/dns_suffixes_text"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
